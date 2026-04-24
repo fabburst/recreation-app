@@ -1,7 +1,15 @@
 // Composer — flux search-first avec détection IA du type.
 // Phase 1 : recherche IA (type auto-détecté). Phase 2 : formulaire pré-rempli.
 
-function Composer({ t, draft: initial, mode, onClose, onSave }) {
+function findDuplicate(items, title, type) {
+  if (!title || !items) return null;
+  return items.find(i =>
+    i.title.toLowerCase().trim() === title.toLowerCase().trim() &&
+    (!type || i.type === type)
+  ) || null;
+}
+
+function Composer({ t, draft: initial, mode, onClose, onSave, items = [] }) {
   // 'search' | 'detail'
   const [phase, setPhase] = React.useState(mode === 'edit' ? 'detail' : 'search');
   const [draft, setDraft] = React.useState(initial);
@@ -9,6 +17,7 @@ function Composer({ t, draft: initial, mode, onClose, onSave }) {
   const [suggestions, setSuggestions] = React.useState([]);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  const [duplicate, setDuplicate] = React.useState(null);
   const debounceRef = React.useRef(null);
 
   const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
@@ -32,6 +41,8 @@ function Composer({ t, draft: initial, mode, onClose, onSave }) {
   }, [query, phase]);
 
   const pick = (s) => {
+    const dup = findDuplicate(items, s.title, s.type);
+    setDuplicate(dup);
     setDraft(d => ({ ...d, title: s.title, year: s.year, dir: s.dir, runtime: s.runtime, type: s.type || d.type }));
     setQuery(s.title);
     setSuggestions([]);
@@ -192,8 +203,23 @@ function Composer({ t, draft: initial, mode, onClose, onSave }) {
               </div>
 
               <Field t={t} label="Titre">
-                <input value={draft.title || ''} onChange={(e) => set('title', e.target.value)} style={inputStyle(t)} autoFocus={mode !== 'edit'} />
+                <input value={draft.title || ''} onChange={(e) => {
+                  set('title', e.target.value);
+                  setDuplicate(findDuplicate(items, e.target.value, draft.type));
+                }} style={inputStyle(t)} autoFocus={mode !== 'edit'} />
               </Field>
+              {duplicate && mode !== 'edit' && (
+                <div style={{
+                  marginTop: 8, padding: '10px 14px', borderRadius: 8,
+                  background: '#f59e0b22', border: '1px solid #f59e0b55',
+                  display: 'flex', alignItems: 'center', gap: 8,
+                }}>
+                  <span style={{ fontSize: 14 }}>⚠️</span>
+                  <span style={{ fontFamily: t.mono, fontSize: 10, color: '#f59e0b', letterSpacing: 0.4 }}>
+                    <strong>"{duplicate.title}"</strong> est déjà dans ta bibliothèque ({duplicate.status === 'termine' ? 'Terminé' : duplicate.status === 'en_cours' ? 'En cours' : 'À voir'}).
+                  </span>
+                </div>
+              )}
               <div style={{ height: 12 }} />
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>

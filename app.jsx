@@ -141,7 +141,7 @@ function App({ tweaks }) {
       )}
 
       {composer && (
-        <Composer t={t} draft={composer.draft} mode={composer.mode}
+        <Composer t={t} draft={composer.draft} mode={composer.mode} items={items}
           onClose={() => setComposer(null)}
           onSave={(d) => { upsert(d); setComposer(null); }} />
       )}
