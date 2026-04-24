@@ -49,13 +49,15 @@ async function rawgCover(title) {
   return hit?.background_image || null;
 }
 
-// ── Open Library (livres, pas de clé) ───────────────────────────────────
-async function openLibraryCover(title, author) {
-  const url = `https://openlibrary.org/search.json?title=${encodeURIComponent(title)}${author ? `&author=${encodeURIComponent(author)}` : ''}&limit=1`;
-  const data = await fetchJson(url);
-  const doc = (data.docs || [])[0];
-  if (!doc || !doc.cover_i) return null;
-  return `https://covers.openlibrary.org/b/id/${doc.cover_i}-L.jpg`;
+// ── Google Books (livres, sans clé, 100 req/jour) ───────────────────────
+async function googleBooksCover(title, author) {
+  const q = `intitle:${encodeURIComponent(title)}${author ? `+inauthor:${encodeURIComponent(author)}` : ''}`;
+  const data = await fetchJson(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1&printType=books`);
+  const item = (data.items || [])[0];
+  const thumb = item?.volumeInfo?.imageLinks?.thumbnail || item?.volumeInfo?.imageLinks?.smallThumbnail;
+  if (!thumb) return null;
+  // Force HTTPS + taille large
+  return thumb.replace('http://', 'https://').replace('&zoom=1', '&zoom=3');
 }
 
 // Résolution principale. Asynchrone mais idempotente via cache.
@@ -68,7 +70,7 @@ async function resolveCover(item) {
     if (item.type === 'film')        url = await tmdbCover(item.title, item.year, false);
     else if (item.type === 'serie')  url = await tmdbCover(item.title, item.year, true);
     else if (item.type === 'jeu')    url = await rawgCover(item.title);
-    else if (item.type === 'livre')  url = await openLibraryCover(item.title, item.dir);
+    else if (item.type === 'livre')  url = await googleBooksCover(item.title, item.dir);
   } catch (e) {
     url = null;
   }
