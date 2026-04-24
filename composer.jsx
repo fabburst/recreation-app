@@ -260,28 +260,13 @@ function Spinner({ t }) {
 // In the deployed repo, replace with Gemini call (see src/lib/ai.js)
 // ─────────────────────────────────────────────────────────────
 async function aiSearch(query, hintType) {
-  const typeHint = hintType && hintType !== 'all' ? `La catégorie probable est "${hintType}" (film|serie|jeu|livre), mais corrige si c'est évident.` : '';
-  const prompt = `Tu es un assistant qui reconnaît des œuvres (films, séries, jeux vidéo, livres) à partir d'une recherche partielle.
-L'utilisateur tape : "${query}". ${typeHint}
-Renvoie un JSON strict (sans markdown, sans commentaire) de 3 à 5 suggestions plausibles, triées par pertinence.
-Chaque suggestion : { "title": string, "type": "film"|"serie"|"jeu"|"livre", "year": number, "dir": string, "runtime": string }
-- "dir" = réalisateur (film/série), studio (jeu), auteur (livre).
-- "runtime" = durée courte ("1h 48"), nombre d'épisodes ("6 épisodes"), pages ("288 p.") ou durée estimée ("~20h").
-Réponds uniquement par le JSON.`;
-
-  try {
-    const raw = await window.claude.complete(prompt);
-    const clean = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/,'').trim();
-    const parsed = JSON.parse(clean);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.slice(0, 6);
-  } catch (e) {
-    // Fallback: naive local match against seeded data for demo
-    return MEDIA
-      .filter(m => m.title.toLowerCase().includes(query.toLowerCase()))
-      .slice(0, 5)
-      .map(m => ({ title: m.title, type: m.type, year: m.year, dir: m.dir, runtime: m.runtime }));
-  }
+  const r = await fetch('/api/ai-search', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query, type: hintType }),
+  });
+  if (!r.ok) throw new Error('api error');
+  return r.json();
 }
 
 // ─────────────────────────────────────────────────────────────
