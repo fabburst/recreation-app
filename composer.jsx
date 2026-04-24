@@ -209,6 +209,36 @@ function Composer({ t, draft: initial, mode, onClose, onSave }) {
                 <input value={draft.runtime || ''} onChange={(e) => set('runtime', e.target.value)} style={inputStyle(t)} placeholder={draft.type === 'livre' ? '288 p.' : draft.type === 'jeu' ? '~20h' : '1h 48'} />
               </Field>
 
+              {draft.type === 'jeu' && (
+                <>
+                  <div style={{ height: 12 }} />
+                  <Label t={t}>Plateforme</Label>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {[
+                      { v: 'Steam',            icon: '🖥' },
+                      { v: 'PlayStation 5',    icon: '🎮' },
+                      { v: 'Nintendo Switch 2',icon: '🕹' },
+                      { v: 'Xbox',             icon: '🟢' },
+                      { v: 'iOS',              icon: '📱' },
+                      { v: 'Android',          icon: '🤖' },
+                    ].map(o => {
+                      const active = draft.platform === o.v;
+                      return (
+                        <button key={o.v} onClick={() => set('platform', active ? null : o.v)} style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 5,
+                          padding: '7px 12px', border: `1px solid ${active ? t.accent : t.line}`,
+                          background: active ? `${t.accent}22` : 'transparent',
+                          color: active ? t.ink : t.inkDim,
+                          borderRadius: 999, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit',
+                        }}>
+                          {o.icon} {o.v}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              )}
+
               <div style={{ height: 16 }} />
 
               <Label t={t}>État</Label>
