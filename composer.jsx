@@ -148,6 +148,19 @@ function Composer({ t, draft: initial, mode, onClose, onSave }) {
                   Remplir manuellement →
                 </button>
               )}
+
+              {/* Import epub */}
+              <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ flex: 1, height: 1, background: t.line }} />
+                <span style={{ fontFamily: t.mono, fontSize: 9, color: t.inkFaint, letterSpacing: 1 }}>OU</span>
+                <div style={{ flex: 1, height: 1, background: t.line }} />
+              </div>
+              <EpubImport t={t} onImport={(data) => {
+                setDraft(d => ({ ...d, type: 'livre', title: data.title, dir: data.author, year: data.year || null, runtime: data.pages || '', _epubCover: data.coverUrl }));
+                setQuery(data.title);
+                setSuggestions([]);
+                setPhase('detail');
+              }} />
             </>
           )}
 
@@ -298,6 +311,87 @@ function inputStyle(t) {
 function Spinner({ t }) {
   return (
     <div style={{ width: 14, height: 14, border: `2px solid ${t.line}`, borderTopColor: t.accent, borderRadius: '50%', animation: 'rec-spin 0.7s linear infinite' }} />
+  );
+}
+
+// ── Epub import ──────────────────────────────────────────────────────────
+async function parseEpub(file) {
+  const JSZip = window.JSZip;
+  if (!JSZip) throw new Error('JSZip not loaded');
+  const zip = await JSZip.loadAsync(file);
+
+  // 1. Lire container.xml pour trouver le fichier OPF
+  const containerXml = await zip.file('META-INF/container.xml').async('text');
+  const opfPath = containerXml.match(/full-path="([^"]+\.opf)"/)?.[1];
+  if (!opfPath) throw new Error('OPF not found');
+
+  const opfText = await zip.file(opfPath).async('text');
+  const parser = new DOMParser();
+  const opf = parser.parseFromString(opfText, 'application/xml');
+
+  // 2. Metadata
+  const title = opf.querySelector('metadata title')?.textContent?.trim() || file.name.replace('.epub','');
+  const author = opf.querySelector('metadata creator')?.textContent?.trim() || '';
+  const dateStr = opf.querySelector('metadata date')?.textContent?.trim() || '';
+  const year = dateStr ? parseInt(dateStr.slice(0, 4)) || null : null;
+
+  // 3. Cherche la couverture dans le manifest
+  const opfDir = opfPath.includes('/') ? opfPath.slice(0, opfPath.lastIndexOf('/') + 1) : '';
+  let coverUrl = null;
+  const coverMeta = opf.querySelector('meta[name="cover"]');
+  const coverId = coverMeta?.getAttribute('content');
+  const coverItem = coverId
+    ? opf.querySelector(`manifest item[id="${coverId}"]`)
+    : opf.querySelector('manifest item[properties="cover-image"], manifest item[id*="cover"]');
+
+  if (coverItem) {
+    const coverHref = opfDir + coverItem.getAttribute('href');
+    const coverFile = zip.file(coverHref);
+    if (coverFile) {
+      const blob = await coverFile.async('blob');
+      coverUrl = await new Promise((res) => {
+        const reader = new FileReader();
+        reader.onload = (e) => res(e.target.result);
+        reader.readAsDataURL(blob);
+      });
+    }
+  }
+
+  return { title, author, year, coverUrl };
+}
+
+function EpubImport({ t, onImport }) {
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const inputRef = React.useRef(null);
+
+  const handle = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setErr('');
+    try {
+      const data = await parseEpub(file);
+      onImport(data);
+    } catch (ex) {
+      setErr('Impossible de lire ce fichier epub.');
+    } finally { setBusy(false); }
+    e.target.value = '';
+  };
+
+  return (
+    <div style={{ marginTop: 10 }}>
+      <input ref={inputRef} type="file" accept=".epub" onChange={handle} style={{ display: 'none' }} />
+      <button onClick={() => inputRef.current?.click()} disabled={busy} style={{
+        width: '100%', padding: '11px', border: `1px dashed ${t.line}`,
+        background: 'transparent', color: t.inkDim, borderRadius: 8,
+        cursor: busy ? 'default' : 'pointer', fontSize: 12.5, fontFamily: 'inherit',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+      }}>
+        {busy ? <Spinner t={t} /> : '📖'}
+        {busy ? 'Lecture epub…' : 'Importer depuis un epub →'}
+      </button>
+      {err && <div style={{ marginTop: 6, fontFamily: t.mono, fontSize: 10, color: t.red || '#f87171' }}>{err}</div>}
+    </div>
   );
 }
 

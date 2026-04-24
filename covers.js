@@ -49,19 +49,18 @@ async function rawgCover(title) {
   return hit?.background_image || null;
 }
 
-// ── Google Books (livres, sans clé, 100 req/jour) ───────────────────────
+// ── Google Books via fonction serveur (évite Brave shields + CORS) ───────
 async function googleBooksCover(title, author) {
-  const q = `intitle:${encodeURIComponent(title)}${author ? `+inauthor:${encodeURIComponent(author)}` : ''}`;
-  const data = await fetchJson(`https://www.googleapis.com/books/v1/volumes?q=${q}&maxResults=1&printType=books`);
-  const item = (data.items || [])[0];
-  const thumb = item?.volumeInfo?.imageLinks?.thumbnail || item?.volumeInfo?.imageLinks?.smallThumbnail;
-  if (!thumb) return null;
-  // Force HTTPS + taille large
-  return thumb.replace('http://', 'https://').replace('&zoom=1', '&zoom=3');
+  const params = new URLSearchParams({ title });
+  if (author) params.set('author', author);
+  const data = await fetchJson(`/api/book-cover?${params}`);
+  return data.url || null;
 }
 
 // Résolution principale. Asynchrone mais idempotente via cache.
 async function resolveCover(item) {
+  // Cover importée depuis epub → priorité absolue
+  if (item._epubCover) { cacheSet(`${item.type}|${(item.title||'').toLowerCase()}|${item.year||''}`, item._epubCover); return item._epubCover; }
   const key = `${item.type}|${(item.title || '').toLowerCase()}|${item.year || ''}`;
   const cached = cacheGet(key);
   if (cached !== undefined) return cached;
