@@ -33,6 +33,7 @@ Format strict : { "title": string, "type": "film"|"serie"|"jeu"|"livre", "year":
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
           generationConfig: { temperature: 0.2 },
+          tools: [{ googleSearch: {} }],
         }),
       }
     );
