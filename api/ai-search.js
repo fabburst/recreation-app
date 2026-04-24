@@ -1,43 +1,50 @@
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).end();
 
-  const { query, type } = req.body || {};
-  if (!query) return res.status(400).json({ error: 'missing query' });
-
   const key = process.env.GEMINI_KEY_API;
   if (!key) return res.status(500).json({ error: 'GEMINI_KEY_API not set' });
 
+  let body = req.body;
+  if (typeof body === 'string') { try { body = JSON.parse(body); } catch { body = {}; } }
+  const { query, type } = body || {};
+  if (!query) return res.status(400).json({ error: 'missing query' });
+
   const typeHint = type && type !== 'all'
-    ? `La catégorie probable est "${type}" (film|serie|jeu|livre), mais corrige si c'est évident.`
-    : '';
+    ? `La catégorie probable est "${type}", mais corrige si c'est évident.`
+    : 'Détermine automatiquement si c\'est un film, une série, un jeu vidéo ou un livre.';
 
-  const prompt = `Tu es un assistant qui reconnaît des œuvres (films, séries, jeux vidéo, livres) à partir d'une recherche partielle.
+  const prompt = `Tu es un assistant qui identifie des œuvres culturelles (films, séries TV, jeux vidéo, livres) depuis une recherche partielle.
 L'utilisateur tape : "${query}". ${typeHint}
-Renvoie un JSON strict (sans markdown, sans commentaire) de 3 à 5 suggestions plausibles, triées par pertinence.
-Chaque suggestion : { "title": string, "type": "film"|"serie"|"jeu"|"livre", "year": number, "dir": string, "runtime": string }
-- "dir" = réalisateur (film/série), studio (jeu), auteur (livre).
-- "runtime" = durée courte ("1h 48"), nombre d'épisodes ("6 épisodes"), pages ("288 p.") ou durée estimée ("~20h").
-Réponds uniquement par le JSON.`;
-
-  const r = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${key}`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }),
-    }
-  );
-
-  if (!r.ok) return res.status(502).json({ error: 'Gemini error', status: r.status });
-
-  const data = await r.json();
-  const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
-  const clean = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+Réponds UNIQUEMENT par un tableau JSON valide de 4 à 6 suggestions, sans markdown ni commentaire.
+Format strict de chaque objet : { "title": string, "type": "film"|"serie"|"jeu"|"livre", "year": number, "dir": string, "runtime": string }
+- "dir" = réalisateur (film/série), studio (jeu), auteur (livre)
+- "runtime" = "1h 48" / "6 épisodes" / "~20h" / "320 p."`;
 
   try {
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.2 },
+        }),
+      }
+    );
+
+    const data = await r.json();
+    if (!r.ok) {
+      console.error('Gemini error:', JSON.stringify(data));
+      return res.status(502).json({ error: 'Gemini error', detail: data });
+    }
+
+    const raw = data?.candidates?.[0]?.content?.parts?.[0]?.text || '[]';
+    const clean = raw.trim().replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/, '').trim();
     const parsed = JSON.parse(clean);
     res.json(Array.isArray(parsed) ? parsed.slice(0, 6) : []);
-  } catch {
-    res.json([]);
+  } catch (e) {
+    console.error('ai-search error:', e);
+    res.status(500).json({ error: e.message });
   }
 }
