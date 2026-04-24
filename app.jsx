@@ -11,22 +11,14 @@ function useLocalStorage(key, initial) {
 }
 
 function useMediaStore() {
-  const [items, setItemsRaw] = useLocalStorage('rec.items', MEDIA);
+  const [items, setItems] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
-
-  const setItems = React.useCallback((updater) => {
-    setItemsRaw(prev => {
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      try { localStorage.setItem('rec.items', JSON.stringify(next)); } catch {}
-      return next;
-    });
-  }, [setItemsRaw]);
 
   React.useEffect(() => {
     if (!window.sb) { setLoading(false); return; }
     window.sb.from('media').select('*').order('added', { ascending: false })
       .then(({ data, error }) => {
-        if (!error && data && data.length) setItemsRaw(data);
+        if (!error && data) setItems(data);
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -37,17 +29,17 @@ function useMediaStore() {
     const row = { ...draft, id: draft.id || ('x' + Date.now()), added: draft.added || new Date().toISOString().slice(0, 10) };
     setItems(xs => isNew ? [row, ...xs] : xs.map(i => i.id === row.id ? { ...i, ...row } : i));
     if (window.sb) await window.sb.from('media').upsert(row, { onConflict: 'id' });
-  }, [items, setItems]);
+  }, [items]);
 
   const removeItem = React.useCallback(async (id) => {
     setItems(xs => xs.filter(i => i.id !== id));
     if (window.sb) await window.sb.from('media').delete().eq('id', id);
-  }, [setItems]);
+  }, []);
 
   const patchItem = React.useCallback(async (id, patch) => {
     setItems(xs => xs.map(i => i.id === id ? { ...i, ...patch } : i));
     if (window.sb) await window.sb.from('media').update(patch).eq('id', id);
-  }, [setItems]);
+  }, []);
 
   return { items, loading, upsert, removeItem, patchItem };
 }
