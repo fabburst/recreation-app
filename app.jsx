@@ -1,6 +1,6 @@
 // Recreation app — full responsive web app.
 // Mobile-first, with a desktop layout that kicks in at ≥ 900px.
-// State persists to localStorage; Supabase adapter is stubbed in src/lib/supabase.js.
+// Data stored in Supabase; localStorage used as cache for instant first paint.
 
 function useLocalStorage(key, initial) {
   const [v, setV] = React.useState(() => {
@@ -8,6 +8,48 @@ function useLocalStorage(key, initial) {
   });
   React.useEffect(() => { try { localStorage.setItem(key, JSON.stringify(v)); } catch {} }, [key, v]);
   return [v, setV];
+}
+
+function useMediaStore() {
+  const [items, setItemsRaw] = useLocalStorage('rec.items', MEDIA);
+  const [loading, setLoading] = React.useState(true);
+
+  const setItems = React.useCallback((updater) => {
+    setItemsRaw(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try { localStorage.setItem('rec.items', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }, [setItemsRaw]);
+
+  React.useEffect(() => {
+    if (!window.sb) { setLoading(false); return; }
+    window.sb.from('media').select('*').order('added', { ascending: false })
+      .then(({ data, error }) => {
+        if (!error && data && data.length) setItemsRaw(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const upsert = React.useCallback(async (draft) => {
+    const isNew = !items.find(i => i.id === draft.id);
+    const row = { ...draft, id: draft.id || ('x' + Date.now()), added: draft.added || new Date().toISOString().slice(0, 10) };
+    setItems(xs => isNew ? [row, ...xs] : xs.map(i => i.id === row.id ? { ...i, ...row } : i));
+    if (window.sb) await window.sb.from('media').upsert(row, { onConflict: 'id' });
+  }, [items, setItems]);
+
+  const removeItem = React.useCallback(async (id) => {
+    setItems(xs => xs.filter(i => i.id !== id));
+    if (window.sb) await window.sb.from('media').delete().eq('id', id);
+  }, [setItems]);
+
+  const patchItem = React.useCallback(async (id, patch) => {
+    setItems(xs => xs.map(i => i.id === id ? { ...i, ...patch } : i));
+    if (window.sb) await window.sb.from('media').update(patch).eq('id', id);
+  }, [setItems]);
+
+  return { items, loading, upsert, removeItem, patchItem };
 }
 
 function useBreakpoint() {
@@ -28,7 +70,7 @@ function App({ tweaks }) {
   const t = theme(mode);
   const bp = useBreakpoint();
 
-  const [items, setItems] = useLocalStorage('rec.items', MEDIA);
+  const { items, loading, upsert, removeItem, patchItem } = useMediaStore();
   const [status, setStatus] = React.useState('a_voir');
   const [type, setType] = React.useState('all');
   const [q, setQ] = React.useState('');
@@ -68,18 +110,8 @@ function App({ tweaks }) {
 
   const selItem = items.find(i => i.id === selected);
 
-  const upsert = (draft) => {
-    setItems(xs => {
-      const ex = xs.find(i => i.id === draft.id);
-      if (ex) return xs.map(i => i.id === draft.id ? { ...i, ...draft } : i);
-      return [{ ...draft, id: draft.id || ('x' + Date.now()), added: new Date().toISOString().slice(0,10) }, ...xs];
-    });
-  };
-  const removeItem = (id) => setItems(xs => xs.filter(i => i.id !== id));
-
-  // Quick "progress item" action
-  const setStatusOf = (id, s) => setItems(xs => xs.map(i => i.id === id ? { ...i, status: s } : i));
-  const setRatingOf = (id, r) => setItems(xs => xs.map(i => i.id === id ? { ...i, rating: r } : i));
+  const setStatusOf = (id, s) => patchItem(id, { status: s });
+  const setRatingOf = (id, r) => patchItem(id, { rating: r });
 
   return (
     <div style={{ minHeight: '100vh', background: t.bg, color: t.ink, fontFamily: t.sans }}>
@@ -135,4 +167,4 @@ function newDraft() {
   };
 }
 
-Object.assign(window, { App, useLocalStorage, useBreakpoint, newDraft });
+Object.assign(window, { App, useLocalStorage, useMediaStore, useBreakpoint, newDraft });
